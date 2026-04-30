@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "EuroWheelz",
+    "slug": "eurowheelz-monteur",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#345022"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "eu.eurowheelz.monteur"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#345022"
+      },
+      "package": "eu.eurowheelz.monteur"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "EuroWheelz wil toegang tot je foto's voor voertuigcontrole.",
+          "cameraPermission": "EuroWheelz wil de camera gebruiken om voertuigen te fotograferen."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "scheme": "eurowheelz"
+  }
+}

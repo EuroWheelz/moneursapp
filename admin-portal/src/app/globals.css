@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+@theme {
+  /* EuroWheelz huisstijl */
+  --color-primary: #345022;        /* donkergroen — sidebar, buttons, actief */
+  --color-primary-hover: #263B18;  /* dieper groen hover */
+  --color-accent: #F3A713;         /* amber/goud — highlights, badges */
+  --color-accent-hover: #D4900E;   /* donkere amber hover */
+
+  --color-background: #F2F4F0;     /* warm lichtgrijs paginaachtergrond */
+  --color-foreground: #1A1A1A;
+
+  /* Sidebar specifiek */
+  --color-sidebar: #2D4A18;
+  --color-sidebar-hover: rgba(255,255,255,0.1);
+  --color-sidebar-active: #F3A713;
+}
+
+:root {
+  --background: #F2F4F0;
+  --foreground: #1A1A1A;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans, "Inter", Arial, sans-serif);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar in EuroWheelz stijl */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c4d0bb; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #345022; }
+
+/* Gedeelde utility: amber-knop met donkere tekst */
+.btn-accent {
+  background-color: #F3A713;
+  color: #1A1A1A;
+  font-weight: 600;
+  transition: background-color 150ms;
+}
+.btn-accent:hover { background-color: #D4900E; }
