@@ -1,0 +1,23 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'admin-portal/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: team_4hSH13JuQp35WrYzSiD21reX
+          vercel-project-id: prj_HMqEfiEUVNkJztcTkykbgDZJ2ZXO
+          working-directory: ./admin-portal
+          vercel-args: '--prod'
