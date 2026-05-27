@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Opdracht } from './types';
 
 const SUPABASE_URL = 'https://cqtpscaefqxntopxyrnr.supabase.co';
@@ -6,8 +7,9 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    persistSession: false,
-    autoRefreshToken: false,
+    storage: AsyncStorage,
+    persistSession: true,
+    autoRefreshToken: true,
     detectSessionInUrl: false,
   },
 });
@@ -36,6 +38,10 @@ export function dbToOpdracht(row: any): Opdracht {
     voertuigen: (row.voertuigen ?? []).map((v: any) => ({
       kenteken: v.kenteken,
       kleur: v.kleur,
+      probleem: v.probleem ?? null,
+      opmerking: v.opmerking ?? '',
+      model: v.model ?? '',
+      meldcode: v.meldcode ?? '',
     })),
     pechStops: (row.pech_stops ?? []).map((p: any) => ({
       id: p.id,

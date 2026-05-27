@@ -5,12 +5,10 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { supabase } from '@/lib/supabase';
 import type { DbOnderdeel, DbVerplaatsVerzoek } from '@/lib/supabase';
 import {
-  Plus, Trash2, Package, ArrowLeftRight, CheckCircle, XCircle, X,
+  Plus, Trash2, Package, ArrowLeftRight, CheckCircle, XCircle, X, Upload, Pencil, Save, Loader2,
 } from 'lucide-react';
+import ImportOnderdelenModal from '@/components/ImportOnderdelenModal';
 
-const MONTEUR_NAMEN: Record<string, string> = {
-  m1: 'Jan Bakker', m2: 'Kevin Smit', m3: 'Sophie van Dam',
-};
 
 const CATEGORIEEN = ['Remmen', 'Verlichting', 'Accu', 'Aandrijving', 'Banden', 'Frame', 'Elektrisch', 'Algemeen'];
 
@@ -18,11 +16,24 @@ export default function OnderdelenPage() {
   const [tab, setTab] = useState<'onderdelen' | 'verzoeken'>('onderdelen');
   const [onderdelen, setOnderdelen] = useState<DbOnderdeel[]>([]);
   const [verzoeken, setVerzoeken] = useState<DbVerplaatsVerzoek[]>([]);
+  const [monteurMap, setMonteurMap] = useState<Record<string, string>>({});
   const [laden, setLaden] = useState(true);
   const [showToevoegen, setShowToevoegen] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [nieuwNaam, setNieuwNaam] = useState('');
   const [nieuwCategorie, setNieuwCategorie] = useState('Algemeen');
   const [opslaan, setOpslaan] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editData, setEditData] = useState<Partial<DbOnderdeel>>({});
+  const [editBezig, setEditBezig] = useState(false);
+
+  useEffect(() => {
+    supabase.from('monteurs').select('id, naam, voornaam').then(({ data }) => {
+      const map: Record<string, string> = {};
+      (data ?? []).forEach((m: any) => { map[m.id] = `${m.voornaam} ${m.naam}`; });
+      setMonteurMap(map);
+    });
+  }, []);
 
   useEffect(() => {
     laadData();
@@ -73,6 +84,33 @@ export default function OnderdelenPage() {
   async function verwijder(id: string) {
     await supabase.from('onderdelen').delete().eq('id', id);
     setOnderdelen((p) => p.filter((o) => o.id !== id));
+  }
+
+  function startEdit(o: DbOnderdeel) {
+    setEditId(o.id);
+    setEditData({ naam: o.naam, artikelcode: o.artikelcode ?? '', prijs: o.prijs, vestiging: o.vestiging ?? '', categorie: o.categorie, actief: o.actief });
+  }
+
+  async function slaOpEdit() {
+    if (!editId) return;
+    setEditBezig(true);
+    const updates = {
+      naam: editData.naam?.trim() || '',
+      artikelcode: editData.artikelcode?.trim() ?? '',
+      prijs: editData.prijs ?? null,
+      vestiging: editData.vestiging?.trim() ?? '',
+      categorie: editData.categorie ?? 'Algemeen',
+      actief: editData.actief ?? true,
+    };
+    const { error } = await supabase.from('onderdelen').update(updates).eq('id', editId);
+    if (!error) {
+      setOnderdelen((p) =>
+        p.map((o) => o.id === editId ? { ...o, ...updates } : o)
+          .sort((a, b) => a.categorie.localeCompare(b.categorie) || a.naam.localeCompare(b.naam))
+      );
+      setEditId(null);
+    }
+    setEditBezig(false);
   }
 
   async function behandelVerzoek(id: string, status: 'goedgekeurd' | 'afgewezen') {
@@ -130,13 +168,22 @@ export default function OnderdelenPage() {
               <p className="text-sm font-bold text-gray-800">Onderdelen catalogus</p>
               <p className="text-xs text-gray-400 mt-0.5">Beschikbaar voor monteurs bij het afwikkelen van opdrachten</p>
             </div>
-            <button
-              onClick={() => setShowToevoegen(!showToevoegen)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Toevoegen
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowImport(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg text-sm font-semibold hover:bg-gray-50 transition-colors shadow-sm"
+              >
+                <Upload className="w-3.5 h-3.5 text-gray-400" />
+                Importeren
+              </button>
+              <button
+                onClick={() => setShowToevoegen(!showToevoegen)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Toevoegen
+              </button>
+            </div>
           </div>
 
           {/* Toevoegen formulier */}
@@ -197,28 +244,118 @@ export default function OnderdelenPage() {
                     <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">{categorie}</p>
                   </div>
                   {items.map((o) => (
-                    <div key={o.id} className="flex items-center gap-4 px-5 py-3 border-b border-gray-50 hover:bg-gray-50/50 group transition-colors">
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${o.actief ? 'bg-green-500' : 'bg-gray-300'}`} />
-                      <span className={`flex-1 text-sm font-medium ${o.actief ? 'text-gray-800' : 'text-gray-400 line-through'}`}>
-                        {o.naam}
-                      </span>
-                      <button
-                        onClick={() => toggleActief(o.id, o.actief)}
-                        className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors ${
-                          o.actief
-                            ? 'bg-green-50 text-green-700 hover:bg-green-100'
-                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                        }`}
-                      >
-                        {o.actief ? 'Actief' : 'Inactief'}
-                      </button>
-                      <button
-                        onClick={() => verwijder(o.id)}
-                        className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-50 rounded-lg transition-all"
-                        title="Verwijderen"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                      </button>
+                    <div key={o.id} className="border-b border-gray-50">
+                      {editId === o.id ? (
+                        /* ── Bewerkregel ── */
+                        <div className="px-5 py-3 bg-primary/5 border-l-2 border-primary space-y-3">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-1">Naam *</label>
+                              <input
+                                autoFocus
+                                value={editData.naam ?? ''}
+                                onChange={(e) => setEditData((p) => ({ ...p, naam: e.target.value }))}
+                                className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-1">Artikelcode</label>
+                              <input
+                                value={editData.artikelcode ?? ''}
+                                onChange={(e) => setEditData((p) => ({ ...p, artikelcode: e.target.value }))}
+                                className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 font-mono"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-1">Prijs (€)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={editData.prijs ?? ''}
+                                onChange={(e) => setEditData((p) => ({ ...p, prijs: e.target.value === '' ? null : parseFloat(e.target.value) }))}
+                                className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-1">Vestiging</label>
+                              <input
+                                value={editData.vestiging ?? ''}
+                                onChange={(e) => setEditData((p) => ({ ...p, vestiging: e.target.value }))}
+                                className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1">
+                              <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-1">Categorie</label>
+                              <select
+                                value={editData.categorie ?? 'Algemeen'}
+                                onChange={(e) => setEditData((p) => ({ ...p, categorie: e.target.value }))}
+                                className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none appearance-none bg-white"
+                              >
+                                {CATEGORIEEN.map((c) => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </div>
+                            <label className="flex items-center gap-2 cursor-pointer mt-4">
+                              <input
+                                type="checkbox"
+                                checked={editData.actief ?? true}
+                                onChange={(e) => setEditData((p) => ({ ...p, actief: e.target.checked }))}
+                                className="w-4 h-4 accent-primary"
+                              />
+                              <span className="text-sm text-gray-600">Actief</span>
+                            </label>
+                            <div className="flex gap-2 mt-4 ml-auto">
+                              <button
+                                onClick={() => setEditId(null)}
+                                className="px-3 py-1.5 text-xs font-semibold text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                              >
+                                Annuleren
+                              </button>
+                              <button
+                                onClick={slaOpEdit}
+                                disabled={editBezig || !editData.naam?.trim()}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/90 disabled:opacity-60 transition-colors"
+                              >
+                                {editBezig ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                Opslaan
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        /* ── Normale rij ── */
+                        <div className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50/50 group transition-colors">
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${o.actief ? 'bg-green-500' : 'bg-gray-300'}`} />
+                          <span className={`flex-1 text-sm font-medium ${o.actief ? 'text-gray-800' : 'text-gray-400 line-through'}`}>
+                            {o.naam}
+                          </span>
+                          {o.artikelcode && (
+                            <span className="font-mono text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">{o.artikelcode}</span>
+                          )}
+                          {o.prijs != null && (
+                            <span className="text-xs text-gray-500 w-16 text-right">€ {Number(o.prijs).toFixed(2)}</span>
+                          )}
+                          {o.vestiging && (
+                            <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">{o.vestiging}</span>
+                          )}
+                          <button
+                            onClick={() => startEdit(o)}
+                            className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-primary/10 rounded-lg transition-all"
+                            title="Bewerken"
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-primary" />
+                          </button>
+                          <button
+                            onClick={() => verwijder(o.id)}
+                            className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-50 rounded-lg transition-all"
+                            title="Verwijderen"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -288,7 +425,7 @@ export default function OnderdelenPage() {
 
                     <div className="flex items-center gap-2 text-[11px] text-gray-400">
                       <span className="font-medium text-gray-500">
-                        {v.monteur_id ? (MONTEUR_NAMEN[v.monteur_id] ?? v.monteur_id) : '—'}
+                        {v.monteur_id ? (monteurMap[v.monteur_id] ?? v.monteur_id) : '—'}
                       </span>
                       <span>·</span>
                       <span>{new Date(v.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
@@ -327,6 +464,12 @@ export default function OnderdelenPage() {
             </div>
           )}
         </div>
+      )}
+      {showImport && (
+        <ImportOnderdelenModal
+          onClose={() => setShowImport(false)}
+          onSuccess={() => { setShowImport(false); laadData(); }}
+        />
       )}
     </DashboardLayout>
   );

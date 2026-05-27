@@ -1,7 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 import {
   LayoutDashboard,
   BookUser,
@@ -15,12 +17,16 @@ import {
   Settings,
   TrendingUp,
   Package,
+  Map,
+  ClipboardList,
 } from 'lucide-react';
 
 const navItems = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Relaties', href: '/relaties', icon: BookUser },
+  { name: 'Overzichtskaart', href: '/kaart', icon: Map },
   { name: 'Planning & Opdrachten', href: '/planning', icon: CalendarDays },
+  { name: 'Opdrachtverleden', href: '/opdrachten', icon: ClipboardList },
   { name: 'Statistieken', href: '/statistieken', icon: TrendingUp },
   { name: 'Voertuigen', href: '/voertuigen', icon: Bike },
   { name: 'Onderdelen', href: '/onderdelen', icon: Package },
@@ -39,6 +45,24 @@ export default function DashboardLayout({
   actions?: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [uitloggen, setUitloggen] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session) router.replace('/login');
+      else setAuthChecked(true);
+    });
+  }, []);
+
+  async function handleLogout() {
+    setUitloggen(true);
+    await supabase.auth.signOut();
+    router.push('/login');
+  }
+
+  if (!authChecked) return null;
 
   const activeItem = navItems
     .slice()
@@ -100,17 +124,21 @@ export default function DashboardLayout({
             <Settings className="w-4 h-4" />
             <span>Instellingen</span>
           </Link>
-          <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 cursor-pointer transition-all group">
+          <button
+            onClick={handleLogout}
+            disabled={uitloggen}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 cursor-pointer transition-all group disabled:opacity-60"
+          >
             <div className="w-7 h-7 rounded-full font-bold text-xs flex items-center justify-center flex-shrink-0 text-white"
               style={{ backgroundColor: '#F3A713', color: '#345022' }}>
               M
             </div>
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 text-left">
               <p className="text-sm font-medium text-white leading-tight truncate">Maxim</p>
-              <p className="text-[11px] text-white/40">Beheerder</p>
+              <p className="text-[11px] text-white/40">{uitloggen ? 'Uitloggen...' : 'Beheerder'}</p>
             </div>
             <LogOut className="w-3.5 h-3.5 text-white/30 group-hover:text-white/70 transition-colors flex-shrink-0" />
-          </div>
+          </button>
         </div>
       </aside>
 

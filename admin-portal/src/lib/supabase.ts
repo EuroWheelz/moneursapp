@@ -27,6 +27,11 @@ export type DbOpdracht = {
   tijd_start: string | null;
   tijd_eind: string | null;
   tijd_vastzetten: boolean;
+  vervolg_verzoek: boolean;
+  vervolg_beschrijving: string;
+  aantal_voertuigen: number;
+  type_detail: string;
+  crediteurnummer: string;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -36,11 +41,26 @@ export type DbOpdracht = {
 
 export type DbVoertuig = {
   id: string;
-  opdracht_id: string;
+  opdracht_id: string | null;
+  relatie_id: string | null;
   kenteken: string;
-  kleur: string;
+  kleur: string | null;
+  model: string;
+  uitvoering: string;
+  tenaamstelling: string;
+  barcode: string;
+  meldcode: string;
+  object_status: string;
   probleem: string | null;
   gedaan: string | null;
+  laatste_onderhoud: string | null;
+  volgend_onderhoud: string | null;
+  opmerking: string;
+  actief: boolean;
+  contract_type: string;
+  begindatum: string | null;
+  einddatum: string | null;
+  relaties?: { naam: string; crediteurnummer: string | null };
 };
 
 export type DbPechStop = {
@@ -58,6 +78,9 @@ export type DbPechStop = {
 export type DbOnderdeel = {
   id: string;
   naam: string;
+  artikelcode: string;
+  prijs: number | null;
+  vestiging: string;
   categorie: string;
   actief: boolean;
   created_at: string;
@@ -96,4 +119,37 @@ export type DbMonteur = {
   email: string;
   bus_capaciteit: number;
   van_huis: boolean;
+  huisadres: string;
+  huisadres_lat: number | null;
+  huisadres_lng: number | null;
+};
+
+export type DbRelatie = {
+  id: string;
+  crediteurnummer: string | null;
+  naam: string;
+  type: string;
+  status: string;
+  land: string;
+  adres: string;
+  postcode: string;
+  plaats: string;
+  lat: number | null;
+  lng: number | null;
+  telefoon: string;
+  email: string;
+  contactpersoon: string;
+  echopers: number;
+  accus: number;
+  openingstijden: string;
+  winterstalling_van: string;
+  winterstalling_tot: string;
+  mail_werkbon: boolean;
+  mail_afspraakbevestiging: boolean;
+  mail_nieuwsbrief: boolean;
+  onvolledig: boolean;
+  notitie: string;
+  gesloten_dagen: number[];
+  created_at: string;
+  deleted_at: string | null;
 };

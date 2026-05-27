@@ -41,10 +41,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'base64 en locatie zijn verplicht' }, { status: 400, headers });
     }
 
-    // Claude vision: detect kentekens in the photo
     const message = await anthropic.messages.create({
-      model: 'claude-opus-4-7',
-      max_tokens: 512,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 256,
       messages: [
         {
           role: 'user',
@@ -59,12 +58,9 @@ export async function POST(req: NextRequest) {
             },
             {
               type: 'text',
-              text: `Je bent een expert in het herkennen van e-bike en e-chopper kentekens.
-Analyseer deze foto en geef ALLEEN een JSON array terug met alle kentekens die zichtbaar zijn.
-Kenteken formaat is meestal: EW-XXXX-X (bijv. EW-0001-A) maar kan ook anders zijn.
-Als er geen kentekens zichtbaar zijn, geef dan een lege array terug.
-Geef ALLEEN de JSON array terug, geen andere tekst.
-Voorbeeld output: ["EW-0001-A", "EW-0002-B"]`,
+              text: `Lees alle kentekenplaten op deze foto. Kentekens kunnen elk formaat hebben: EW-0001-A, FFH-32P, AB-123-CD, 12-AB-34, etc.
+Geef ALLEEN een JSON array terug met de kentekens exact zoals je ze leest. Geen uitleg.
+Voorbeelden: ["EW-0001-A"] of ["FFH-32P", "EW-0005-B"] of []`,
             },
           ],
         },
@@ -74,17 +70,15 @@ Voorbeeld output: ["EW-0001-A", "EW-0002-B"]`,
     let gedetecteerd: string[] = [];
     const rawText = message.content[0].type === 'text' ? message.content[0].text.trim() : '[]';
     try {
-      const match = rawText.match(/\[.*\]/s);
+      const match = rawText.match(/\[[\s\S]*\]/);
       gedetecteerd = match ? JSON.parse(match[0]) : [];
     } catch {
       gedetecteerd = [];
     }
 
-    // Bereken afwijkingen: kentekens op foto die NIET bekend zijn bij deze locatie
     const bekendeSet = new Set(bekende_kentekens.map((k) => k.toUpperCase()));
     const afwijkingen = gedetecteerd.filter((k) => !bekendeSet.has(k.toUpperCase()));
 
-    // Sla op in foto_meldingen (altijd, ook zonder afwijkingen)
     await supabase.from('foto_meldingen').insert({
       opdracht_id: opdracht_id || null,
       monteur_id: monteur_id || null,
@@ -96,11 +90,7 @@ Voorbeeld output: ["EW-0001-A", "EW-0002-B"]`,
       status: afwijkingen.length > 0 ? 'afwijking' : 'ok',
     });
 
-    return NextResponse.json({
-      gedetecteerd,
-      afwijkingen,
-      heeftAfwijkingen: afwijkingen.length > 0,
-    }, { headers });
+    return NextResponse.json({ gedetecteerd, afwijkingen, heeftAfwijkingen: afwijkingen.length > 0 }, { headers });
   } catch (err: any) {
     console.error('[kenteken-detectie]', err);
     return NextResponse.json(

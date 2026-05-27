@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import {
-  ScrollView, View, Text, TouchableOpacity, StyleSheet, Switch, Alert, ActivityIndicator,
+  ScrollView, View, Text, TouchableOpacity, StyleSheet, Switch, Alert, ActivityIndicator, Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
-import { monteur as mockMonteur } from '@/lib/mock-data';
+import { useAuth } from '@/lib/auth-context';
 import { Colors } from '@/lib/colors';
 
 type WeekStats = { totaal: number; uitgevoerd: number; voertuigen: number };
@@ -32,8 +31,8 @@ function weekGrenzen(): { ma: string; zo: string } {
 }
 
 export default function ProfielScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { monteur, uitloggen } = useAuth();
   const [meldingen, setMeldingen] = useState(true);
   const [vroegtijdig, setVroegtijdig] = useState(false);
   const [stats, setStats] = useState<WeekStats>({ totaal: 0, uitgevoerd: 0, voertuigen: 0 });
@@ -43,13 +42,14 @@ export default function ProfielScreen() {
 
   useEffect(() => {
     laadStats();
-  }, []);
+  }, [monteur?.id]);
 
   async function laadStats() {
+    if (!monteur) return;
     const { data } = await supabase
       .from('opdrachten')
       .select('status, voertuigen(id)')
-      .eq('monteur_id', mockMonteur.id)
+      .eq('monteur_id', monteur.id)
       .gte('datum', ma)
       .lte('datum', zo)
       .is('deleted_at', null);
@@ -64,12 +64,16 @@ export default function ProfielScreen() {
   }
 
   function handleUitloggen() {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Weet je zeker dat je wilt uitloggen?')) uitloggen();
+      return;
+    }
     Alert.alert(
       'Uitloggen',
       'Weet je zeker dat je wilt uitloggen?',
       [
         { text: 'Annuleren', style: 'cancel' },
-        { text: 'Uitloggen', style: 'destructive', onPress: () => router.replace('/(auth)') },
+        { text: 'Uitloggen', style: 'destructive', onPress: () => uitloggen() },
       ],
     );
   }
@@ -80,18 +84,20 @@ export default function ProfielScreen() {
 
   const pct = stats.totaal > 0 ? Math.round((stats.uitgevoerd / stats.totaal) * 100) : 0;
 
+  if (!monteur) return null;
+
   return (
     <View style={{ flex: 1, backgroundColor: Colors.background }}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.avatarWrapper}>
           <Text style={styles.avatarTekst}>
-            {mockMonteur.voornaam[0]}{mockMonteur.naam.split(' ').pop()?.[0]}
+            {monteur.voornaam[0]}{monteur.naam.split(' ').pop()?.[0]}
           </Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerNaam}>{mockMonteur.naam}</Text>
-          <Text style={styles.headerEmail}>{mockMonteur.email}</Text>
+          <Text style={styles.headerNaam}>{monteur.naam}</Text>
+          <Text style={styles.headerEmail}>{monteur.email}</Text>
           <View style={styles.rolBadge}>
             <Ionicons name="construct-outline" size={11} color={Colors.white} />
             <Text style={styles.rolBadgeTekst}>Monteur</Text>
@@ -130,9 +136,9 @@ export default function ProfielScreen() {
         <View style={styles.sectie}>
           <Text style={styles.sectieTitel}>Mijn bus</Text>
           <View style={styles.kaart}>
-            <InfoRij icoon="car-outline" label="Vertrek vanuit huis" waarde={mockMonteur.vanHuis ? 'Ja' : 'Nee'} />
-            <InfoRij icoon="layers-outline" label="Laadcapaciteit" waarde={`${mockMonteur.busCapaciteit} voertuigen`} />
-            <InfoRij icoon="id-card-outline" label="Medewerker ID" waarde={mockMonteur.id} />
+            <InfoRij icoon="car-outline" label="Vertrek vanuit huis" waarde={monteur.vanHuis ? 'Ja' : 'Nee'} />
+            <InfoRij icoon="layers-outline" label="Laadcapaciteit" waarde={`${monteur.busCapaciteit} voertuigen`} />
+            <InfoRij icoon="id-card-outline" label="Medewerker ID" waarde={monteur.id} />
           </View>
         </View>
 
@@ -234,7 +240,7 @@ export default function ProfielScreen() {
           <Text style={styles.uitlogTekst}>Uitloggen</Text>
         </TouchableOpacity>
 
-        <Text style={styles.versie}>EuroWheelz Monteur App v1.0 · {mockMonteur.id}</Text>
+        <Text style={styles.versie}>EuroWheelz Monteur App v1.0 · {monteur.id}</Text>
       </ScrollView>
     </View>
   );

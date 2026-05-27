@@ -241,27 +241,30 @@ function StatusFlow({ huidig }: { huidig: string }) {
 
 /* ── Type-specifieke secties ──────────────────────────────── */
 function OnderhoudInfo({ opdracht }: { opdracht: Opdracht }) {
-  const checklist = ['Remmen controleren', 'Banden spanning', 'Ketting spannen', 'Verlichting', 'Accu status', 'Frame & bevestiging'];
   return (
     <InfoKaart titel={`Voertuigen (${opdracht.voertuigen.length})`}>
-      <View style={styles.voertuigenGrid}>
-        {opdracht.voertuigen.map((v) => (
-          <View key={v.kenteken} style={styles.voertuigTegel}>
-            <View style={[styles.voertuigKleur, { backgroundColor: v.kleur }]} />
-            <Text style={styles.voertuigKenteken}>{v.kenteken}</Text>
+      {opdracht.voertuigen.map((v) => (
+        <View key={v.kenteken} style={styles.voertuigRijBig}>
+          <View style={[styles.voertuigKleur, { backgroundColor: v.kleur ?? '#9CA3AF' }]} />
+          <View style={{ flex: 1 }}>
+            <View style={styles.voertuigKentekenRij}>
+              <Text style={styles.voertuigKentekenBig}>{v.kenteken}</Text>
+              {v.meldcode ? <Text style={styles.meldcodeTekst}>{v.meldcode}</Text> : null}
+              {v.model ? <Text style={styles.modelTekst}>{v.model}</Text> : null}
+            </View>
+            {v.probleem ? (
+              <View style={styles.notitiePil}>
+                <Ionicons name="warning-outline" size={11} color="#B45309" />
+                <Text style={styles.notitiePilTekst}>{v.probleem}</Text>
+              </View>
+            ) : null}
+            {v.opmerking ? (
+              <Text style={styles.opmerkingTekst}>{v.opmerking}</Text>
+            ) : null}
           </View>
-        ))}
-      </View>
-      <View style={{ marginTop: 12 }}>
-        <Text style={styles.checklistTitel}>Checklist per voertuig</Text>
-        {checklist.map((item) => (
-          <View key={item} style={styles.checklistRij}>
-            <Ionicons name="square-outline" size={16} color={Colors.border} />
-            <Text style={styles.checklistTekst}>{item}</Text>
-          </View>
-        ))}
-        <Text style={styles.checklistHint}>✓ Afvinken tijdens uitvoering in het afwikkelen-scherm</Text>
-      </View>
+        </View>
+      ))}
+      <Text style={styles.checklistHint}>✓ Afvinken & onderdelen registreren in het afwikkelen-scherm</Text>
     </InfoKaart>
   );
 }
@@ -310,14 +313,19 @@ function AccuInfo(_: { opdracht: Opdracht }) {
 function PlaatsenInfo({ opdracht }: { opdracht: Opdracht }) {
   return (
     <InfoKaart titel={`Voertuigen om te ${opdracht.type === 'plaatsen' ? 'plaatsen' : 'terughalen'} (${opdracht.voertuigen.length})`}>
-      <View style={styles.voertuigenGrid}>
-        {opdracht.voertuigen.map((v) => (
-          <View key={v.kenteken} style={styles.voertuigTegel}>
-            <View style={[styles.voertuigKleur, { backgroundColor: v.kleur }]} />
-            <Text style={styles.voertuigKenteken}>{v.kenteken}</Text>
+      {opdracht.voertuigen.map((v) => (
+        <View key={v.kenteken} style={styles.voertuigRijBig}>
+          <View style={[styles.voertuigKleur, { backgroundColor: v.kleur ?? '#9CA3AF' }]} />
+          <View style={{ flex: 1 }}>
+            <View style={styles.voertuigKentekenRij}>
+              <Text style={styles.voertuigKentekenBig}>{v.kenteken}</Text>
+              {v.meldcode ? <Text style={styles.meldcodeTekst}>{v.meldcode}</Text> : null}
+              {v.model ? <Text style={styles.modelTekst}>{v.model}</Text> : null}
+            </View>
+            {v.opmerking ? <Text style={styles.opmerkingTekst}>{v.opmerking}</Text> : null}
           </View>
-        ))}
-      </View>
+        </View>
+      ))}
     </InfoKaart>
   );
 }
@@ -408,6 +416,15 @@ const styles = StyleSheet.create({
   checklistRij: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: Colors.border },
   checklistTekst: { fontSize: 14, color: Colors.textDark },
   checklistHint: { fontSize: 11, color: Colors.textLight, marginTop: 8, fontStyle: 'italic' },
+
+  voertuigRijBig: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  voertuigKentekenRij: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  voertuigKentekenBig: { fontSize: 14, fontWeight: '700', color: Colors.textDark },
+  meldcodeTekst: { fontSize: 11, fontWeight: '700', color: Colors.green, backgroundColor: Colors.greenLight, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 },
+  modelTekst: { fontSize: 12, color: Colors.textLight },
+  notitiePil: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, backgroundColor: '#FEF3C7', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3, alignSelf: 'flex-start' },
+  notitiePilTekst: { fontSize: 11, color: '#B45309', fontWeight: '600', flex: 1 },
+  opmerkingTekst: { fontSize: 12, color: Colors.textMedium, marginTop: 4, fontStyle: 'italic' },
 
   reparatieRij: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.border },
   probleemTekst: { fontSize: 12, color: Colors.textMedium, marginTop: 2, fontStyle: 'italic' },

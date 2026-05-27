@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase, dbToOpdracht } from '@/lib/supabase';
-import { monteur } from '@/lib/mock-data';
+import { useAuth } from '@/lib/auth-context';
 import { Colors } from '@/lib/colors';
 import type { Opdracht } from '@/lib/types';
 
@@ -43,6 +43,7 @@ function isVandaag(datum: string): boolean {
 export default function OpdrachtenScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { monteur } = useAuth();
 
   const [opdrachtenPerDag, setOpdrachtenPerDag] = useState<Record<string, Opdracht[]>>({});
   const [laden, setLaden] = useState(true);
@@ -61,9 +62,10 @@ export default function OpdrachtenScreen() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [monteur?.id]);
 
   async function laadWeek() {
+    if (!monteur) return;
     const { data } = await supabase
       .from('opdrachten')
       .select('*, voertuigen(*), pech_stops(*)')

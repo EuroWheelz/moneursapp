@@ -21,6 +21,7 @@ type VoertuigStatus = {
   gedaan: string;
   onderdelenIds: string[];
   swapMeegenomen: boolean;
+  operationeelZetten: boolean;
 };
 
 type PechStopStatus = {
@@ -51,7 +52,7 @@ export default function AfwikkelenScreen() {
   const [opdracht, setOpdracht] = useState<Opdracht | null>(null);
   const [laden, setLaden] = useState(true);
   const [onderdelen, setOnderdelen] = useState<Onderdeel[]>([]);
-  const [locatieVoertuigen, setLocatieVoertuigen] = useState<{ kenteken: string; kleur: string }[]>([]);
+  const [locatieVoertuigen, setLocatieVoertuigen] = useState<{ kenteken: string; kleur: string | null; meldcode?: string; model?: string }[]>([]);
 
   const [voertuigStatussen, setVoertuigStatussen] = useState<VoertuigStatus[]>([]);
   const [pechStatussen, setPechStatussen] = useState<PechStopStatus[]>([]);
@@ -83,29 +84,29 @@ export default function AfwikkelenScreen() {
       const op = dbToOpdracht(opData);
       setOpdracht(op);
       setVoertuigStatussen(op.voertuigen.map((v) => ({
-        kenteken: v.kenteken, gedaan: '', onderdelenIds: [], swapMeegenomen: false,
+        kenteken: v.kenteken, gedaan: '', onderdelenIds: [], swapMeegenomen: false, operationeelZetten: op.type === 'reparatie',
       })));
       setPechStatussen((op.pechStops ?? []).map((ps) => ({
         id: ps.id, gevonden: null, kenteken: ps.kenteken ?? '', gedaan: '',
       })));
 
-      // Laad locatie voertuigen (andere opdrachten op dezelfde locatie)
-      const { data: locatieOps } = await supabase
-        .from('opdrachten')
+      // Laad locatie voertuigen via relaties tabel
+      const { data: relatieData } = await supabase
+        .from('relaties')
         .select('id')
-        .eq('locatie', op.locatie)
-        .is('deleted_at', null)
-        .neq('id', id as string);
+        .eq('naam', op.locatie)
+        .single();
 
-      if (locatieOps && locatieOps.length > 0) {
-        const opIds = locatieOps.map((o: any) => o.id);
+      if (relatieData?.id) {
+        const bestaande = new Set(op.voertuigen.map((v) => v.kenteken));
         const { data: vData } = await supabase
           .from('voertuigen')
-          .select('kenteken, kleur')
-          .in('opdracht_id', opIds);
-        const bestaande = new Set(op.voertuigen.map((v) => v.kenteken));
+          .select('kenteken, kleur, meldcode, model')
+          .eq('relatie_id', relatieData.id)
+          .eq('actief', true)
+          .order('kenteken');
         setLocatieVoertuigen(
-          (vData ?? []).filter((v: any) => !bestaande.has(v.kenteken)) as { kenteken: string; kleur: string }[]
+          (vData ?? []).filter((v: any) => !bestaande.has(v.kenteken))
         );
       }
     }
@@ -145,6 +146,8 @@ export default function AfwikkelenScreen() {
     await supabase.from('opdrachten').update({
       status: 'uitgevoerd',
       notitie: algemenNotitie || undefined,
+      vervolg_verzoek: vervolgVerzoek,
+      vervolg_beschrijving: vervolgVerzoek ? vervolgBeschrijving.trim() : '',
       updated_at: new Date().toISOString(),
     }).eq('id', id);
 
@@ -199,6 +202,31 @@ export default function AfwikkelenScreen() {
       );
     }
 
+    // Update vloot status terug naar Operationeel
+    if (opdracht?.type === 'reparatie') {
+      const operationeelKentekens = voertuigStatussen
+        .filter((vs) => vs.operationeelZetten)
+        .map((vs) => vs.kenteken);
+      if (operationeelKentekens.length > 0) {
+        await supabase.from('voertuigen')
+          .update({ object_status: 'Operationeel' })
+          .in('kenteken', operationeelKentekens)
+          .is('opdracht_id', null);
+      }
+    } else {
+      const kentekens = [
+        ...(opdracht?.voertuigen ?? []).map((v) => v.kenteken),
+        ...extraVoertuigen.map((ev) => ev.kenteken),
+      ];
+      if (kentekens.length > 0) {
+        const nieuweStatus = opdracht?.type === 'terughalen' ? 'In loods' : 'Operationeel';
+        await supabase.from('voertuigen')
+          .update({ object_status: nieuweStatus })
+          .in('kenteken', kentekens)
+          .is('opdracht_id', null);
+      }
+    }
+
     setBezig(false);
     setIngediend(true);
     setTimeout(() => router.replace('/(tabs)'), 1800);
@@ -224,12 +252,6 @@ export default function AfwikkelenScreen() {
     );
   }
 
-  // Alle beschikbare kentekens voor verplaats verzoek = huidige opdracht + locatie
-  const alleKentekens = [
-    ...opdracht.voertuigen.map((v) => ({ kenteken: v.kenteken, kleur: v.kleur })),
-    ...extraVoertuigen.map((ev) => ({ kenteken: ev.kenteken, kleur: ev.kleur })),
-    ...locatieVoertuigen,
-  ];
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -479,7 +501,7 @@ function VoertuigKaart({ voertuig, status, type, onderdelen, onChange }: {
       </TouchableOpacity>
 
       {showOnderdelen && (
-        <View style={styles.onderdelenLijst}>
+        <View style={styles.onderdelenTray}>
           <TextInput
             style={styles.zoekVeld}
             placeholder="Zoek onderdeel..."
@@ -487,47 +509,77 @@ function VoertuigKaart({ voertuig, status, type, onderdelen, onChange }: {
             value={zoek}
             onChangeText={setZoek}
           />
-          {onderdelen.length === 0 ? (
-            <Text style={styles.geenOnderdelen}>Geen onderdelen beschikbaar</Text>
-          ) : (
-            Object.entries(groepenMap).map(([cat, items]) => (
-              <View key={cat}>
-                <Text style={styles.categorieTekst}>{cat}</Text>
-                {items.map((o) => {
-                  const gesel = status.onderdelenIds.includes(o.id);
-                  return (
-                    <TouchableOpacity
-                      key={o.id}
-                      style={styles.onderdeelRij}
-                      onPress={() => toggle(o.id)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={[styles.checkbox, gesel && styles.checkboxActief]}>
-                        {gesel && <Ionicons name="checkmark" size={12} color={Colors.white} />}
-                      </View>
-                      <Text style={[styles.onderdeelNaam, gesel && styles.onderdeelNaamGesel]}>
-                        {o.naam}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ))
+          <ScrollView
+            style={styles.onderdelenScroller}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator
+            keyboardShouldPersistTaps="handled"
+          >
+            {onderdelen.length === 0 ? (
+              <Text style={styles.geenOnderdelen}>Geen onderdelen beschikbaar</Text>
+            ) : gefilterd.length === 0 ? (
+              <Text style={styles.geenOnderdelen}>Geen resultaten voor "{zoek}"</Text>
+            ) : (
+              Object.entries(groepenMap).map(([cat, items]) => (
+                <View key={cat}>
+                  <Text style={styles.categorieTekst}>{cat}</Text>
+                  {items.map((o) => {
+                    const gesel = status.onderdelenIds.includes(o.id);
+                    return (
+                      <TouchableOpacity
+                        key={o.id}
+                        style={[styles.onderdeelRij, gesel && styles.onderdeelRijGesel]}
+                        onPress={() => toggle(o.id)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={[styles.checkbox, gesel && styles.checkboxActief]}>
+                          {gesel && <Ionicons name="checkmark" size={12} color={Colors.white} />}
+                        </View>
+                        <Text style={[styles.onderdeelNaam, gesel && styles.onderdeelNaamGesel]}>
+                          {o.naam}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))
+            )}
+          </ScrollView>
+          {onderdelen.length > 0 && (
+            <View style={styles.trayVoet}>
+              <Text style={styles.trayVoetTekst}>
+                {gefilterd.length} onderdelen · scroll om meer te zien
+              </Text>
+            </View>
           )}
         </View>
       )}
 
       {type === 'reparatie' && (
-        <TouchableOpacity
-          style={styles.swapRij}
-          onPress={() => onChange('swapMeegenomen', !status.swapMeegenomen)}
-          activeOpacity={0.8}
-        >
-          <View style={[styles.checkbox, status.swapMeegenomen && styles.checkboxActief]}>
-            {status.swapMeegenomen && <Ionicons name="checkmark" size={12} color={Colors.white} />}
+        <>
+          <TouchableOpacity
+            style={styles.swapRij}
+            onPress={() => onChange('swapMeegenomen', !status.swapMeegenomen)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.checkbox, status.swapMeegenomen && styles.checkboxActief]}>
+              {status.swapMeegenomen && <Ionicons name="checkmark" size={12} color={Colors.white} />}
+            </View>
+            <Text style={styles.swapTekst}>Swap e-chopper meegenomen</Text>
+          </TouchableOpacity>
+          <View style={styles.operationeelRij}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.operationeelTekst}>Zet {status.kenteken} terug op Operationeel</Text>
+              <Text style={styles.operationeelSub}>Schakel uit als het voertuig nog niet klaar is</Text>
+            </View>
+            <Switch
+              value={status.operationeelZetten}
+              onValueChange={(v) => onChange('operationeelZetten', v)}
+              trackColor={{ false: Colors.border, true: Colors.greenLight }}
+              thumbColor={status.operationeelZetten ? Colors.green : Colors.white}
+            />
           </View>
-          <Text style={styles.swapTekst}>Swap e-chopper meegenomen</Text>
-        </TouchableOpacity>
+        </>
       )}
     </View>
   );
@@ -535,7 +587,7 @@ function VoertuigKaart({ voertuig, status, type, onderdelen, onChange }: {
 
 /* ── Extra voertuig melden ───────────────────────────────── */
 function ExtraVoertuigSectie({ locatieVoertuigen, extraVoertuigen, onToevoegen, onVerwijder }: {
-  locatieVoertuigen: { kenteken: string; kleur: string }[];
+  locatieVoertuigen: { kenteken: string; kleur: string | null; meldcode?: string; model?: string }[];
   extraVoertuigen: ExtraVoertuig[];
   onToevoegen: (ev: ExtraVoertuig) => void;
   onVerwijder: (kenteken: string) => void;
@@ -608,7 +660,7 @@ function ExtraVoertuigSectie({ locatieVoertuigen, extraVoertuigen, onToevoegen, 
                       style={styles.dropdownItem}
                       onPress={() => { setGeselecteerd(v.kenteken); setHandmatig(''); setShowDropdown(false); }}
                     >
-                      <View style={[styles.voertuigKleurVlak, { backgroundColor: v.kleur }]} />
+                      <View style={[styles.voertuigKleurVlak, { backgroundColor: v.kleur ?? Colors.green }]} />
                       <Text style={styles.dropdownItemTekst}>{v.kenteken}</Text>
                     </TouchableOpacity>
                   ))}
@@ -660,6 +712,7 @@ type FotoItem = {
   gedetecteerd: string[];
   afwijkingen: string[];
   fout?: string;
+  fotoKey: string;
 };
 
 function FotoSectie({ opdrachtId, monteurId, locatie, bekendeKentekens }: {
@@ -679,37 +732,54 @@ function FotoSectie({ opdrachtId, monteurId, locatie, bekendeKentekens }: {
         return;
       }
       result = await ImagePicker.launchCameraAsync({
-        base64: true, quality: 0.6, mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        base64: true, quality: 0.4, mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        exif: false,
       });
     } else {
       result = await ImagePicker.launchImageLibraryAsync({
-        base64: true, quality: 0.6, mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        base64: true, quality: 0.4, mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        exif: false,
       });
     }
     if (result.canceled || !result.assets?.[0]) return;
 
     const asset = result.assets[0];
-    const base64 = asset.base64 ?? '';
+
+    // Haal puur base64 op — expo-image-picker retourneert op web soms:
+    // 1. asset.base64 met "data:image/...;base64," prefix
+    // 2. asset.base64 leeg maar asset.uri is een data-URI
+    let rawBase64 = asset.base64 ?? '';
+    if (rawBase64.includes(',')) rawBase64 = rawBase64.split(',')[1];
+    if (!rawBase64 && asset.uri?.startsWith('data:') && asset.uri.includes('base64,')) {
+      rawBase64 = asset.uri.split('base64,')[1] ?? '';
+    }
+    const base64 = rawBase64;
     const mediaType = asset.mimeType ?? 'image/jpeg';
+
+    // Gebruik een stabiele key ipv array-index om state-race te voorkomen
+    const fotoKey = `${Date.now()}-${Math.random()}`;
     const nieuweFoto: FotoItem = {
-      uri: asset.uri, base64, mediaType, analysing: true, gedetecteerd: [], afwijkingen: [],
+      uri: asset.uri, base64, mediaType, analysing: true, gedetecteerd: [], afwijkingen: [], fotoKey,
     };
 
     setFotos((prev) => [...prev, nieuweFoto]);
-    const idx = fotos.length;
 
     try {
+      if (!base64) throw new Error('Foto bevat geen base64 data — probeer opnieuw');
+
       // Upload naar Supabase Storage
       let fotoUrl: string | undefined;
-      const bestandsNaam = `fotos/${opdrachtId}/${Date.now()}.jpg`;
-      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-      const { data: uploadData } = await supabase.storage
-        .from('fotos')
-        .upload(bestandsNaam, bytes, { contentType: mediaType, upsert: true });
-      if (uploadData?.path) {
-        const { data: urlData } = supabase.storage.from('fotos').getPublicUrl(uploadData.path);
-        fotoUrl = urlData?.publicUrl;
-      }
+      try {
+        const bestandsNaam = `fotos/${opdrachtId}/${Date.now()}.jpg`;
+        const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+        const { data: uploadData } = await supabase.storage
+          .from('fotos')
+          .upload(bestandsNaam, bytes, { contentType: mediaType, upsert: true });
+        if (uploadData?.path) {
+          const { data: urlData } = supabase.storage.from('fotos').getPublicUrl(uploadData.path);
+          fotoUrl = urlData?.publicUrl;
+        }
+      } catch { /* upload mislukt → doorgaan zonder URL */ }
 
       // AI kenteken detectie
       const res = await fetch(`${ADMIN_URL}/api/kenteken-detectie`, {
@@ -720,15 +790,18 @@ function FotoSectie({ opdrachtId, monteurId, locatie, bekendeKentekens }: {
           opdracht_id: opdrachtId, monteur_id: monteurId, foto_url: fotoUrl,
         }),
       });
+
       const json = await res.json();
-      setFotos((prev) => prev.map((f, i) =>
-        i === idx
+      if (!res.ok) throw new Error(json.error ?? `Server fout ${res.status}`);
+
+      setFotos((prev) => prev.map((f) =>
+        f.fotoKey === fotoKey
           ? { ...f, analysing: false, gedetecteerd: json.gedetecteerd ?? [], afwijkingen: json.afwijkingen ?? [] }
           : f
       ));
-    } catch {
-      setFotos((prev) => prev.map((f, i) =>
-        i === idx ? { ...f, analysing: false, fout: 'Analyse mislukt' } : f
+    } catch (err: any) {
+      setFotos((prev) => prev.map((f) =>
+        f.fotoKey === fotoKey ? { ...f, analysing: false, fout: err?.message ?? 'Analyse mislukt' } : f
       ));
     }
   }
@@ -747,7 +820,7 @@ function FotoSectie({ opdrachtId, monteurId, locatie, bekendeKentekens }: {
                 <Text style={styles.fotoAnalyseTekst}>Kentekens detecteren...</Text>
               </View>
             ) : foto.fout ? (
-              <Text style={styles.fotoFout}>{foto.fout}</Text>
+              <Text style={styles.fotoFout} selectable>{foto.fout}</Text>
             ) : (
               <>
                 {foto.gedetecteerd.length === 0 ? (
@@ -775,7 +848,7 @@ function FotoSectie({ opdrachtId, monteurId, locatie, bekendeKentekens }: {
               </>
             )}
           </View>
-          <TouchableOpacity onPress={() => setFotos((p) => p.filter((_, j) => j !== i))}>
+          <TouchableOpacity onPress={() => setFotos((p) => p.filter((f) => f.fotoKey !== foto.fotoKey))}>
             <Ionicons name="close-circle" size={18} color={Colors.textLight} />
           </TouchableOpacity>
         </View>
@@ -797,7 +870,7 @@ function FotoSectie({ opdrachtId, monteurId, locatie, bekendeKentekens }: {
 
 /* ── Verplaats verzoek sectie (meerdere) ──────────────────── */
 function VerplaatsVerzoekSectie({ locatieVoertuigen, verzoeken, onToevoegen, onVerwijder }: {
-  locatieVoertuigen: { kenteken: string; kleur: string }[];
+  locatieVoertuigen: { kenteken: string; kleur: string | null; meldcode?: string; model?: string }[];
   verzoeken: VerplaatsVerzoek[];
   onToevoegen: (v: VerplaatsVerzoek) => void;
   onVerwijder: (idx: number) => void;
@@ -894,7 +967,7 @@ function VerplaatsVerzoekSectie({ locatieVoertuigen, verzoeken, onToevoegen, onV
                   {locatieVoertuigen.map((v) => (
                     <TouchableOpacity key={v.kenteken} style={styles.dropdownItem}
                       onPress={() => { setMeenemen(v.kenteken); setShowDropdown(false); }}>
-                      <View style={[styles.kentekenKleur, { backgroundColor: v.kleur }]} />
+                      <View style={[styles.kentekenKleur, { backgroundColor: v.kleur ?? Colors.green }]} />
                       <Text style={styles.dropdownItemTekst}>{v.kenteken}</Text>
                     </TouchableOpacity>
                   ))}
@@ -1087,16 +1160,23 @@ const styles = StyleSheet.create({
   tagTekst: { fontSize: 12, fontWeight: '600', color: Colors.green },
   onderdelenKnop: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 4, marginBottom: 4 },
   onderdelenKnopTekst: { fontSize: 14, color: Colors.green, fontWeight: '600' },
-  onderdelenLijst: { backgroundColor: Colors.background, borderRadius: 12, padding: 10, marginBottom: 10, borderWidth: 1, borderColor: Colors.border },
-  zoekVeld: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: 8, fontSize: 13, color: Colors.textDark, marginBottom: 8 },
+  onderdelenTray: { backgroundColor: Colors.background, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: Colors.border, overflow: 'hidden' },
+  onderdelenScroller: { maxHeight: 220, paddingHorizontal: 10, paddingTop: 6 },
+  zoekVeld: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: 8, fontSize: 13, color: Colors.textDark, margin: 10, marginBottom: 4 },
   geenOnderdelen: { fontSize: 13, color: Colors.textLight, textAlign: 'center', padding: 12 },
   categorieTekst: { fontSize: 10, fontWeight: '700', color: Colors.textLight, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 8, marginBottom: 4, paddingHorizontal: 4 },
-  onderdeelRij: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  onderdeelRij: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  onderdeelRijGesel: { backgroundColor: Colors.greenLight + '40' },
   onderdeelNaam: { fontSize: 14, color: Colors.textDark, flex: 1 },
   onderdeelNaamGesel: { color: Colors.green, fontWeight: '600' },
+  trayVoet: { borderTopWidth: 1, borderTopColor: Colors.border, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: Colors.white },
+  trayVoetTekst: { fontSize: 10, color: Colors.textLight, textAlign: 'center' },
 
   swapRij: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
   swapTekst: { fontSize: 14, color: Colors.textDark },
+  operationeelRij: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.border },
+  operationeelTekst: { fontSize: 14, fontWeight: '600', color: Colors.textDark },
+  operationeelSub: { fontSize: 11, color: Colors.textLight, marginTop: 2 },
   checkbox: { width: 20, height: 20, borderRadius: 6, borderWidth: 2, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
   checkboxActief: { backgroundColor: Colors.green, borderColor: Colors.green },
 

@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase, dbToOpdracht } from '@/lib/supabase';
-import { monteur } from '@/lib/mock-data';
+import { useAuth } from '@/lib/auth-context';
 import { Colors } from '@/lib/colors';
 import type { Opdracht } from '@/lib/types';
 
@@ -31,6 +31,7 @@ function navigeerNaar(adres: string, postcode: string, stad: string) {
 export default function VandaagScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { monteur } = useAuth();
 
   const [opdrachten, setOpdrachten] = useState<Opdracht[]>([]);
   const [laden, setLaden] = useState(true);
@@ -39,19 +40,20 @@ export default function VandaagScreen() {
   const datum = new Date().toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
 
   useEffect(() => {
+    if (!monteur) return;
     laadOpdrachten();
 
-    // Real-time subscription — uniek naam per mount om StrictMode-conflicten te voorkomen
     const channel = supabase
-      .channel(`vandaag-monteur-${Date.now()}`)
+      .channel(`vandaag-monteur-${monteur.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'opdrachten' }, laadOpdrachten)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'voertuigen' }, laadOpdrachten)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [monteur?.id]);
 
   async function laadOpdrachten() {
+    if (!monteur) return;
     const { data } = await supabase
       .from('opdrachten')
       .select('*, voertuigen(*), pech_stops(*)')

@@ -16,11 +16,6 @@ type Rit = {
   type: string;
 };
 
-const MONTEUR_NAMEN: Record<string, string> = {
-  m1: 'Jan Bakker',
-  m2: 'Kevin Smit',
-  m3: 'Sophie van Dam',
-};
 
 function periodeGrenzen(periode: Periode): { van: string; tot: string; label: string } {
   const nu = new Date();
@@ -58,9 +53,18 @@ function periodeGrenzen(periode: Periode): { van: string; tot: string; label: st
 export default function StatistiekenPage() {
   const [periode, setPeriode] = useState<Periode>('week');
   const [ritten, setRitten] = useState<Rit[]>([]);
+  const [monteurMap, setMonteurMap] = useState<Record<string, string>>({});
   const [laden, setLaden] = useState(true);
 
   const grenzen = periodeGrenzen(periode);
+
+  useEffect(() => {
+    supabase.from('monteurs').select('id, naam, voornaam').then(({ data }) => {
+      const map: Record<string, string> = {};
+      (data ?? []).forEach((m: any) => { map[m.id] = `${m.voornaam} ${m.naam}`; });
+      setMonteurMap(map);
+    });
+  }, []);
 
   useEffect(() => {
     laadRitten();
@@ -71,9 +75,8 @@ export default function StatistiekenPage() {
     const query = supabase
       .from('opdrachten')
       .select('id, locatie, datum, monteur_id, km_gereden, type')
-      .eq('status', 'uitgevoerd')
+      .in('status', ['uitgevoerd', 'afgerond'])
       .is('deleted_at', null)
-      .not('km_gereden', 'is', null)
       .order('datum', { ascending: false });
 
     if (grenzen.van) query.gte('datum', grenzen.van);
@@ -84,14 +87,27 @@ export default function StatistiekenPage() {
     setLaden(false);
   }
 
-  const totalKm = ritten.reduce((t, r) => t + (r.km_gereden ?? 0), 0);
-  const aantalRitten = ritten.length;
+  // Dedupliceer km per monteur+dag: alle stops van één dag hebben dezelfde km_dag waarde,
+  // we tellen die dag maar 1× (neem de max per monteur+dag combinatie)
+  const dagKmMap: Record<string, number> = {};
+  for (const r of ritten) {
+    if (!r.monteur_id || !r.datum || r.km_gereden == null) continue;
+    const key = `${r.monteur_id}_${r.datum}`;
+    dagKmMap[key] = Math.max(dagKmMap[key] ?? 0, r.km_gereden);
+  }
+  const uniekeDagen = Object.values(dagKmMap);
+
+  const totalKm = uniekeDagen.reduce((t, km) => t + km, 0);
+  const aantalRitten = uniekeDagen.length;
   const gemKm = aantalRitten > 0 ? Math.round(totalKm / aantalRitten) : 0;
 
   // Per monteur
-  const perMonteur = Object.entries(MONTEUR_NAMEN).map(([id, naam]) => {
-    const mRitten = ritten.filter((r) => r.monteur_id === id);
-    return { id, naam, ritten: mRitten.length, km: mRitten.reduce((t, r) => t + (r.km_gereden ?? 0), 0) };
+  const monteurIds = [...new Set(ritten.map((r) => r.monteur_id).filter(Boolean))] as string[];
+  const perMonteur = monteurIds.map((id) => {
+    const mDagen = Object.entries(dagKmMap)
+      .filter(([key]) => key.startsWith(`${id}_`))
+      .map(([, km]) => km);
+    return { id, naam: monteurMap[id] ?? id, ritten: mDagen.length, km: mDagen.reduce((t, km) => t + km, 0) };
   }).filter((m) => m.ritten > 0);
 
   const maxKm = Math.max(...perMonteur.map((m) => m.km), 1);
@@ -201,8 +217,8 @@ export default function StatistiekenPage() {
                         {r.datum ? new Date(r.datum + 'T12:00:00').toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }) : '—'}
                       </td>
                       <td className="py-2 font-medium text-gray-800 truncate max-w-[120px]">{r.locatie}</td>
-                      <td className="py-2 text-gray-500">{r.monteur_id ? MONTEUR_NAMEN[r.monteur_id] ?? r.monteur_id : '—'}</td>
-                      <td className="py-2 text-right font-bold text-primary">{r.km_gereden} km</td>
+                      <td className="py-2 text-gray-500">{r.monteur_id ? monteurMap[r.monteur_id] ?? r.monteur_id : '—'}</td>
+                      <td className="py-2 text-right font-bold text-primary">{r.km_gereden != null ? `${r.km_gereden} km` : '—'}</td>
                     </tr>
                   ))}
                 </tbody>

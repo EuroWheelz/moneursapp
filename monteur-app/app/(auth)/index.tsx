@@ -3,30 +3,43 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/lib/colors';
+import { supabase } from '@/lib/supabase';
 
 export default function LoginScreen() {
-  const router = useRouter();
-  const [email, setEmail] = useState('jan@eurowheelz.nl');
+  const [email, setEmail] = useState('');
   const [wachtwoord, setWachtwoord] = useState('');
   const [toonWachtwoord, setToonWachtwoord] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fout, setFout] = useState('');
 
   const handleLogin = async () => {
-    if (!email || !wachtwoord) {
+    if (!email.trim() || !wachtwoord) {
       setFout('Vul je e-mailadres en wachtwoord in.');
       return;
     }
     setFout('');
     setLoading(true);
-    // Simuleer API-call
-    await new Promise((r) => setTimeout(r, 800));
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password: wachtwoord,
+    });
+
     setLoading(false);
-    // In productie: JWT valideren, rol controleren (monteur)
-    router.replace('/(tabs)');
+
+    if (error) {
+      if (error.message.includes('Invalid login credentials')) {
+        setFout('Onjuist e-mailadres of wachtwoord.');
+      } else if (error.message.includes('Email not confirmed')) {
+        setFout('E-mailadres nog niet bevestigd. Neem contact op met de beheerder.');
+      } else {
+        setFout(error.message);
+      }
+      return;
+    }
+    // NavigatieWacht in _layout.tsx stuurt automatisch door naar /(tabs)
   };
 
   return (

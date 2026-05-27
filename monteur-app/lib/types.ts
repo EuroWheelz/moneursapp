@@ -18,6 +18,10 @@ export type Prioriteit = 1 | 2 | 3;
 export interface Voertuig {
   kenteken: string;
   kleur: string;
+  probleem?: string | null;
+  opmerking?: string;
+  model?: string;
+  meldcode?: string;
 }
 
 export interface PechStop {
