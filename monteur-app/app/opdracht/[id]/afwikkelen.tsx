@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase, dbToOpdracht } from '@/lib/supabase';
-import { monteur } from '@/lib/mock-data';
+import { useAuth } from '@/lib/auth-context';
 import { Colors } from '@/lib/colors';
 import type { Opdracht, Voertuig } from '@/lib/types';
 
@@ -48,6 +48,7 @@ export default function AfwikkelenScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { monteur } = useAuth();
 
   const [opdracht, setOpdracht] = useState<Opdracht | null>(null);
   const [laden, setLaden] = useState(true);
@@ -191,7 +192,7 @@ export default function AfwikkelenScreen() {
       await supabase.from('verplaats_verzoeken').insert(
         geldigeVerzoeken.map((v) => ({
           opdracht_id: id,
-          monteur_id: monteur.id,
+          monteur_id: monteur?.id ?? null,
           locatie: opdracht?.locatie ?? '',
           neerzet_kenteken: v.neerzetten.trim() || null,
           meeneem_kenteken: v.meenemen.trim() || null,
@@ -315,7 +316,7 @@ export default function AfwikkelenScreen() {
           {/* Foto toevoegen */}
           <FotoSectie
             opdrachtId={id as string}
-            monteurId={monteur.id}
+            monteurId={monteur?.id ?? ''}
             locatie={opdracht.locatie}
             bekendeKentekens={[
               ...opdracht.voertuigen.map((v) => v.kenteken),
