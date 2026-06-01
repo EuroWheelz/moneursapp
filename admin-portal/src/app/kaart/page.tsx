@@ -4,7 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import DashboardLayout from '@/components/DashboardLayout';
 import { supabase, DbRelatie } from '@/lib/supabase';
-import { Search, AlertCircle, ChevronRight, RefreshCw, CheckCircle2, MapPin, X } from 'lucide-react';
+import { Search, AlertCircle, ChevronRight, RefreshCw, CheckCircle2, MapPin, X, SlidersHorizontal } from 'lucide-react';
+
+type EchopersFilter = 'alle' | '1-5' | '6-15' | '16+';
+type AccuFilter = 'alle' | 'met' | 'zonder';
 
 const LocatieKaart = dynamic(() => import('@/components/LocatieKaart'), {
   ssr: false,
@@ -20,6 +23,10 @@ export default function KaartPage() {
   const [laden, setLaden] = useState(true);
   const [zoek, setZoek] = useState('');
   const [typeFilter, setTypeFilter] = useState<'alle' | 'klant' | 'consignatie'>('alle');
+  const [statusFilter, setStatusFilter] = useState<'alle' | 'actief' | 'inactief'>('alle');
+  const [echopersFilter, setEchopersFilter] = useState<EchopersFilter>('alle');
+  const [accuFilter, setAccuFilter] = useState<AccuFilter>('alle');
+  const [toonFilters, setToonFilters] = useState(false);
   const [actieveId, setActieveId] = useState<string | null>(null);
 
   // Geocodeer-state
@@ -43,6 +50,11 @@ export default function KaartPage() {
     setLaden(false);
   }
 
+  const actieveFilters =
+    (statusFilter !== 'alle' ? 1 : 0) +
+    (echopersFilter !== 'alle' ? 1 : 0) +
+    (accuFilter !== 'alle' ? 1 : 0);
+
   const gefilterd = relaties.filter((r) => {
     const zoekMatch =
       !zoek ||
@@ -50,7 +62,20 @@ export default function KaartPage() {
       r.plaats.toLowerCase().includes(zoek.toLowerCase()) ||
       (r.crediteurnummer ?? '').toLowerCase().includes(zoek.toLowerCase());
     const typeMatch = typeFilter === 'alle' || r.type === typeFilter;
-    return zoekMatch && typeMatch;
+    const statusMatch =
+      statusFilter === 'alle' ||
+      (statusFilter === 'actief' && r.status === 'actief') ||
+      (statusFilter === 'inactief' && r.status !== 'actief');
+    const echopersMatch =
+      echopersFilter === 'alle' ||
+      (echopersFilter === '1-5' && r.echopers >= 1 && r.echopers <= 5) ||
+      (echopersFilter === '6-15' && r.echopers >= 6 && r.echopers <= 15) ||
+      (echopersFilter === '16+' && r.echopers >= 16);
+    const accuMatch =
+      accuFilter === 'alle' ||
+      (accuFilter === 'met' && r.accus > 0) ||
+      (accuFilter === 'zonder' && r.accus === 0);
+    return zoekMatch && typeMatch && statusMatch && echopersMatch && accuMatch;
   });
 
   const metCoords = gefilterd.filter((r) => r.lat != null && r.lng != null);
@@ -139,6 +164,82 @@ export default function KaartPage() {
               </button>
             ))}
           </div>
+
+          {/* Extra filters toggle */}
+          <button
+            onClick={() => setToonFilters(!toonFilters)}
+            className="flex items-center justify-between w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <span className="flex items-center gap-1.5">
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              Filters
+            </span>
+            <span className="flex items-center gap-1.5">
+              {actieveFilters > 0 && (
+                <span className="bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                  {actieveFilters}
+                </span>
+              )}
+              <ChevronRight className={`w-3.5 h-3.5 transition-transform ${toonFilters ? 'rotate-90' : ''}`} />
+            </span>
+          </button>
+
+          {toonFilters && (
+            <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-3">
+
+              {/* Status */}
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Status</p>
+                <div className="flex gap-1">
+                  {(['alle', 'actief', 'inactief'] as const).map((s) => (
+                    <button key={s} onClick={() => setStatusFilter(s)}
+                      className={`flex-1 py-1 text-xs font-medium rounded-md capitalize transition-all
+                        ${statusFilter === s ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                      {s === 'alle' ? 'Alle' : s === 'actief' ? 'Actief' : 'Inactief'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* E-choppers */}
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Aantal e-choppers</p>
+                <div className="flex gap-1">
+                  {(['alle', '1-5', '6-15', '16+'] as const).map((e) => (
+                    <button key={e} onClick={() => setEchopersFilter(e)}
+                      className={`flex-1 py-1 text-xs font-medium rounded-md transition-all
+                        ${echopersFilter === e ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                      {e === 'alle' ? 'Alle' : e}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Accu's */}
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Accu&apos;s</p>
+                <div className="flex gap-1">
+                  {(['alle', 'met', 'zonder'] as const).map((a) => (
+                    <button key={a} onClick={() => setAccuFilter(a)}
+                      className={`flex-1 py-1 text-xs font-medium rounded-md capitalize transition-all
+                        ${accuFilter === a ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                      {a === 'alle' ? 'Alle' : a === 'met' ? 'Met accu\'s' : 'Zonder'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reset */}
+              {actieveFilters > 0 && (
+                <button
+                  onClick={() => { setStatusFilter('alle'); setEchopersFilter('alle'); setAccuFilter('alle'); }}
+                  className="w-full py-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors border-t border-gray-100 pt-2"
+                >
+                  Filters wissen
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Teller */}
           <div className="flex items-center justify-between text-xs text-gray-500 px-1">
